@@ -1,0 +1,16 @@
+{
+  "$schema": "https://moddbcdn.vintagestory.at/schema/modinfo.latest.json",
+  "type": "Code",
+  "modid": "ledger",
+  "name": "Ledger",
+  "authors": [
+    "harukadev"
+  ],
+  "description": "It shows your current activity and game status directly on your Discord profile in real time.",
+  "version": "0.1.0",
+  "side": "Server",
+  "dependencies": {
+    "game": "1.21.0"
+  },
+  "website": "https://harukadev.com/projects/ledger"
+}
