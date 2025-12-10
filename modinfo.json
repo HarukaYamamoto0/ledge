@@ -6,7 +6,7 @@
   "authors": [
     "harukadev"
   ],
-  "description": "It shows your current activity and game status directly on your Discord profile in real time.",
+  "description": "Exports player stats and world info to JSON on the server for use in bots, dashboards, and external tools.",
   "version": "0.1.0",
   "side": "Server",
   "dependencies": {
