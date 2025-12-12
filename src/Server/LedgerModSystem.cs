@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using Ledger.Core;
 using Ledger.Storage;
 using Vintagestory.API.Common;
@@ -5,7 +6,7 @@ using Vintagestory.API.Server;
 
 namespace Ledger.Server;
 
-// ReSharper disable once UnusedType.Global
+[SuppressMessage("ReSharper", "UnusedType.Global")]
 public class LedgerModSystem : ModSystem
 {
     private LedgerService _service = null!;
@@ -14,26 +15,42 @@ public class LedgerModSystem : ModSystem
     {
         var config = LoadConfig(api);
 
+        var basePath = string.IsNullOrWhiteSpace(config.BasePath)
+            ? api.GetOrCreateDataPath(Constants.DefaultBasePath)
+            : config.BasePath;
+
         var registry = new PlayerRegistry();
         var snapshotProvider = new VsPlayerSnapshotProvider(api, registry);
 
         var storages = new List<IPlayerStorage>();
         if (config.EnableJson)
         {
-            storages.Add(new JsonPlayerStorage(config.BasePath));
+            var jsonStorage = new JsonPlayerStorage(basePath);
+            JsonPlayerStorage.CleanupTempFiles(basePath, api);
+            storages.Add(jsonStorage);
         }
 
-        // After: if (config.EnableSqlite) storages.Add(new SqlitePlayerStorage(...));
+        // TODO: After: if (config.EnableSqlite) storages.Add(new SqlitePlayerStorage(...));
 
         _service = new LedgerService(api, registry, snapshotProvider, storages);
 
         api.Event.PlayerJoin += _service.OnPlayerJoin;
         api.Event.PlayerLeave += _service.OnPlayerLeave;
+        api.Event.PlayerDeath += _service.OnPlayerDeath;
 
-        api.World.RegisterGameTickListener(_ => _service.OnIntervalTick(), config.IntervalSeconds * 1000);
+        var interval = config.IntervalSeconds;
 
-        api.Logger.Event($"{Constants.ModLogPrefix} Initialized. Interval: {0}s, BasePath: {1}", config.IntervalSeconds,
-            config.BasePath);
+        if (interval < Constants.MinIntervalSeconds)
+        {
+            api.Logger.Warning(
+                $"{Constants.ModLogPrefix} IntervalSeconds too low, clamping to {Constants.MinIntervalSeconds}s");
+            interval = Constants.MinIntervalSeconds;
+        }
+
+        api.Logger.Event(
+            $"{Constants.ModLogPrefix} Initialized. Interval: {interval}s, BasePath: {basePath}");
+
+        api.World.RegisterGameTickListener(_ => _service.OnIntervalTick(), interval * 1000);
     }
 
     private static LedgerConfig LoadConfig(ICoreServerAPI api)

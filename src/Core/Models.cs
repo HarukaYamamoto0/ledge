@@ -26,8 +26,8 @@ public class PlayerStats
     public StatRange Hunger { get; set; } = new();
     public StatRange Stamina { get; set; } = new();
 
-    public int Deaths { get; set; }
-    public double PlaytimeHours { get; set; }
+    public int Deaths { get; set; } = 0;
+    public double PlaytimeHours { get; set; } = 0;
 }
 
 public class StatRange
