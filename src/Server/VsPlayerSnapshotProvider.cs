@@ -118,7 +118,7 @@ public class VsPlayerSnapshotProvider(ICoreServerAPI sapi, PlayerRegistry regist
         snapshot.Equipment = new PlayerEquipment
         {
             Armor = armor,
-            Weapon = weapon
+            HeldItem = weapon
         };
     }
 

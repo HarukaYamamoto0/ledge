@@ -39,6 +39,7 @@ public class PlayerEquipment
 {
     // ReSharper disable once CollectionNeverQueried.Global
     public List<string> Armor { get; set; } = [];
+    public string HeldItem { get; set; } = "none";
     public string Weapon { get; set; } = "none";
 }
 
