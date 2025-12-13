@@ -8,7 +8,7 @@
         <OutputPath>bin/$(Configuration)/Mods/ledger/</OutputPath>
 
         <ZipName>ledger</ZipName>
-        <ModVersion>0.1.0</ModVersion>
+        <ModVersion>0.1.1</ModVersion>
         <ReleaseDir>$(ProjectDir)Releases</ReleaseDir>
     </PropertyGroup>
 
@@ -46,6 +46,10 @@
         <Content Include="LICENSE" Condition="Exists('LICENSE')">
             <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
         </Content>
+    </ItemGroup>
+
+    <ItemGroup>
+      <Folder Include="Releases\" />
     </ItemGroup>
 
     <Target Name="ZipMod" AfterTargets="Build" Condition="'$(Configuration)' == 'Release'">
