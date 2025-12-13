@@ -103,9 +103,10 @@ public class LedgerService(
 
     private void Persist(PlayerSnapshot snapshot)
     {
+        if (string.IsNullOrWhiteSpace(snapshot.Name))
+            snapshot.Name = "Unknown";
+
         foreach (var storage in storages)
-        {
             storage.SaveSnapshot(snapshot);
-        }
     }
 }

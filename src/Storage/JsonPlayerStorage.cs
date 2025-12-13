@@ -15,7 +15,10 @@ public class JsonPlayerStorage(string basePath) : IPlayerStorage
         var finalPath = Path.Combine(basePath, $"{id}.json");
         var tempPath = Path.Combine(basePath, $"._{id}.json.tmp");
 
-        var json = JsonConvert.SerializeObject(snapshot, Formatting.Indented);
+        var json = JsonConvert.SerializeObject(snapshot, Formatting.Indented, new JsonSerializerSettings
+        {
+            NullValueHandling = NullValueHandling.Ignore
+        });
 
         File.WriteAllText(tempPath, json);
         File.Move(tempPath, finalPath, true);

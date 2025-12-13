@@ -83,7 +83,9 @@ public class PlayerRegistry
     {
         if (_players.TryGetValue(uid, out var existing))
         {
-            existing.Name = name;
+            if (!string.IsNullOrWhiteSpace(name))
+                existing.Name = name;
+
             return existing;
         }
 
@@ -92,7 +94,7 @@ public class PlayerRegistry
         var created = new PlayerSnapshot
         {
             Uid = uid,
-            Name = name,
+            Name = string.IsNullOrWhiteSpace(name) ? "Unknown" : name,
             FirstJoin = nowUnix,
             LastJoin = nowUnix
         };

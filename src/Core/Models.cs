@@ -8,6 +8,8 @@ using System.Collections.Generic;
 
 public class PlayerSnapshot
 {
+    // ReSharper disable once UnusedMember.Global
+    public int SchemaVersion { get; set; } = 1;
     public string Uid { get; set; } = "";
     public string Name { get; set; } = "";
     public bool Online { get; set; }
@@ -37,10 +39,8 @@ public class StatRange
 
 public class PlayerEquipment
 {
-    // ReSharper disable once CollectionNeverQueried.Global
-    public List<string> Armor { get; set; } = [];
+    public List<string> Armor { get; set; } = new(3);
     public string HeldItem { get; set; } = "none";
-    public string Weapon { get; set; } = "none";
 }
 
 public class PlayerWorldInfo

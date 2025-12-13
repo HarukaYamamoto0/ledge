@@ -12,7 +12,7 @@ public class VsPlayerSnapshotProvider(ICoreServerAPI sapi, PlayerRegistry regist
     public PlayerSnapshot CreateSnapshotFor(string uid)
     {
         // Always start from a registry snapshot to avoid accidental resets
-        var baseSnap = registry.GetOrCreate(uid, "Unknown", DateUtil.NowUnix);
+        var baseSnap = registry.GetOrCreate(uid, "", DateUtil.NowUnix);
 
         if (sapi.World.PlayerByUid(uid) is not IServerPlayer player)
         {
@@ -74,35 +74,26 @@ public class VsPlayerSnapshotProvider(ICoreServerAPI sapi, PlayerRegistry regist
 
     private static void FillEquipment(PlayerSnapshot snapshot, IServerPlayer player)
     {
-        var armor = new List<string>(3);
+        var equipment = snapshot.Equipment;
 
         var inv = player.InventoryManager.GetOwnInventory("character");
         if (inv != null)
         {
+            var armor = new List<string>(3);
+
             foreach (var idx in ArmorSlots)
             {
-                if (idx < 0 || idx >= inv.Count)
+                if (idx < 0 || idx >= inv.Count || inv[idx].Empty)
                 {
                     armor.Add("none");
                     continue;
                 }
 
-                var slot = inv[idx];
-                if (slot.Empty)
-                {
-                    armor.Add("none");
-                    continue;
-                }
-
-                armor.Add(slot.Itemstack?.Collectible?.Code?.ToShortString() ?? "unknown");
+                armor.Add(inv[idx].Itemstack?.Collectible?.Code?.ToShortString() ?? "unknown");
             }
-        }
-        else
-        {
-            armor.AddRange(["none", "none", "none"]);
-        }
 
-        var weapon = "none";
+            equipment.Armor = armor;
+        }
 
         var hotbar = player.InventoryManager.GetHotbarInventory();
         var activeIndex = player.InventoryManager.ActiveHotbarSlotNumber;
@@ -112,14 +103,11 @@ public class VsPlayerSnapshotProvider(ICoreServerAPI sapi, PlayerRegistry regist
             activeIndex < hotbar.Count &&
             !hotbar[activeIndex].Empty)
         {
-            weapon = hotbar[activeIndex].Itemstack.Collectible.Code?.ToShortString() ?? "unknown";
+            var held = hotbar[activeIndex].Itemstack?.Collectible?.Code?.ToShortString() ?? "unknown";
+            equipment.HeldItem = held;
         }
 
-        snapshot.Equipment = new PlayerEquipment
-        {
-            Armor = armor,
-            HeldItem = weapon
-        };
+        snapshot.Equipment = equipment;
     }
 
     private void FillWorldOrKeepPrevious(PlayerSnapshot snapshot, Entity entity)
