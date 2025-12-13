@@ -7,145 +7,157 @@ namespace Ledger.Server;
 
 public class VsPlayerSnapshotProvider(ICoreServerAPI sapi, PlayerRegistry registry) : IPlayerSnapshotProvider
 {
+    private static readonly int[] ArmorSlots = [12, 13, 14];
+
     public PlayerSnapshot CreateSnapshotFor(string uid)
     {
+        // Always start from a registry snapshot to avoid accidental resets
+        var baseSnap = registry.GetOrCreate(uid, "Unknown", DateUtil.NowUnix);
+
         if (sapi.World.PlayerByUid(uid) is not IServerPlayer player)
         {
-            // Unknown/offline player, returns a basic snapshot from the registry.
-            var regSnap = registry.GetOrCreate(uid, "Unknown", NowDate);
-            regSnap.Online = false;
-            return regSnap;
+            baseSnap.Online = false;
+            return baseSnap;
         }
+
+        baseSnap.Uid = player.PlayerUID;
+        baseSnap.Name = player.PlayerName;
+        baseSnap.Online = true;
 
         var entity = player.Entity;
 
-        var regSnapshot = registry.GetOrCreate(player.PlayerUID, player.PlayerName, NowDate);
+        // Stats we can safely read (health/hunger) overwrite; others stay as-is (deaths/playtime from registry)
+        FillVitalsOrKeepPrevious(baseSnap, entity);
 
-        var snapshot = new PlayerSnapshot
-        {
-            Uid = player.PlayerUID,
-            Name = player.PlayerName,
-            Online = true,
-            FirstJoin = regSnapshot.FirstJoin,
-            LastJoin = NowDate()
-        };
+        // Equipment overwrite (safe)
+        FillEquipment(baseSnap, player);
 
-        FillStats(snapshot, entity);
-        FillEquipment(snapshot, player);
-        FillWorldInfo(snapshot, entity);
+        // World overwrite only if available; otherwise keep previous
+        FillWorldOrKeepPrevious(baseSnap, entity);
 
-        return snapshot;
+        return baseSnap;
     }
 
-    private static void FillStats(PlayerSnapshot snapshot, Entity entity)
+    private static void FillVitalsOrKeepPrevious(PlayerSnapshot snapshot, Entity entity)
     {
         var watched = entity.WatchedAttributes;
+        if (watched == null) return;
 
-        // Health
-        var health = watched?.GetTreeAttribute("health");
-        snapshot.Stats.Health = new StatRange
+        var health = watched.GetTreeAttribute("health");
+        if (health != null)
         {
-            Current = FiniteOrZero(health?.GetFloat("currenthealth")),
-            Max = FiniteOrZero(health?.GetFloat("maxhealth"))
-        };
+            snapshot.Stats.Health = new StatRange
+            {
+                Current = FiniteOrZero(health.GetFloat("currenthealth")),
+                Max = FiniteOrZero(health.GetFloat("maxhealth"))
+            };
+        }
 
-        // Hunger (satiety)
-        var hunger = watched?.GetTreeAttribute("hunger");
-        snapshot.Stats.Hunger = new StatRange
+        var hunger = watched.GetTreeAttribute("hunger");
+        if (hunger != null)
         {
-            Current = FiniteOrZero(hunger?.GetFloat("currentsaturation")),
-            Max = FiniteOrZero(hunger?.GetFloat("maxsaturation"))
-        };
+            snapshot.Stats.Hunger = new StatRange
+            {
+                Current = FiniteOrZero(hunger.GetFloat("currentsaturation")),
+                Max = FiniteOrZero(hunger.GetFloat("maxsaturation"))
+            };
+        }
 
-        // Vanilla Stamina doesn't exist as a standalone bar,
-        // so for now leave it at 0/0 to avoid misleading data.
-        snapshot.Stats.Stamina = new StatRange
-        {
-            Current = 0,
-            Max = 0
-        };
-
-        // Deaths / Playtime Hours: not currently tracked by Entity.
-        // The idea is to leave this to the PlayerRegistry (events + accumulation).
+        // Do NOT touch Deaths / PlaytimeSeconds here, registry is the source
     }
 
-    private static float FiniteOrZero(float? value)
+    private static double FiniteOrZero(float value)
     {
-        if (value == null) return 0f;
-        var v = value.Value;
-        return float.IsNaN(v) || float.IsInfinity(v) ? 0f : v;
-    }
-
-
-    private static float GetStatValue(EntityStats? stats, string code)
-    {
-        // EntityStats works with "shielded" values per key.
-        return stats?.GetBlended(code) ?? 0f;
+        if (float.IsNaN(value) || float.IsInfinity(value)) return 0d;
+        return value;
     }
 
     private static void FillEquipment(PlayerSnapshot snapshot, IServerPlayer player)
     {
-        var equipment = new PlayerEquipment
-        {
-            Armor = [],
-            Weapon = "none"
-        };
+        var armor = new List<string>(3);
 
-        // Armor inventory
-        var armorInv = player.InventoryManager.GetOwnInventory("armor");
-        if (armorInv != null)
+        var inv = player.InventoryManager.GetOwnInventory("character");
+        if (inv != null)
         {
-            foreach (var slot in armorInv)
+            foreach (var idx in ArmorSlots)
             {
-                if (slot.Empty) continue;
-                equipment.Armor.Add(slot.Itemstack.Collectible.Code?.ToShortString() ?? "unknown");
+                if (idx < 0 || idx >= inv.Count)
+                {
+                    armor.Add("none");
+                    continue;
+                }
+
+                var slot = inv[idx];
+                if (slot.Empty)
+                {
+                    armor.Add("none");
+                    continue;
+                }
+
+                armor.Add(slot.Itemstack?.Collectible?.Code?.ToShortString() ?? "unknown");
             }
         }
+        else
+        {
+            armor.AddRange(["none", "none", "none"]);
+        }
 
-        // Hot bar / item in hand
+        var weapon = "none";
+
         var hotbar = player.InventoryManager.GetHotbarInventory();
         var activeIndex = player.InventoryManager.ActiveHotbarSlotNumber;
 
-        if (hotbar != null && activeIndex >= 0 && activeIndex < hotbar.Count)
+        if (hotbar != null &&
+            activeIndex >= 0 &&
+            activeIndex < hotbar.Count &&
+            !hotbar[activeIndex].Empty)
         {
-            var slot = hotbar[activeIndex];
-            if (!slot.Empty)
-            {
-                equipment.Weapon = slot.Itemstack.Collectible.Code?.ToShortString() ?? "unknown";
-            }
+            weapon = hotbar[activeIndex].Itemstack.Collectible.Code?.ToShortString() ?? "unknown";
         }
 
-        snapshot.Equipment = equipment;
-    }
-
-    private void FillWorldInfo(PlayerSnapshot snapshot, Entity entity)
-    {
-        var pos = entity.Pos.AsBlockPos;
-        var climate = sapi.World.BlockAccessor.GetClimateAt(pos);
-
-        snapshot.World = new PlayerWorldInfo
+        snapshot.Equipment = new PlayerEquipment
         {
-            Temperature = climate?.Temperature ?? 0f,
-            Biome = GetBiomeName(climate)
+            Armor = armor,
+            Weapon = weapon
         };
     }
 
-    private static string GetBiomeName(ClimateCondition? climate)
+    private void FillWorldOrKeepPrevious(PlayerSnapshot snapshot, Entity entity)
     {
-        if (climate == null) return "unknown";
+        var pos = entity.Pos?.AsBlockPos;
+        if (pos == null) return; // keep existing
 
+        ClimateCondition? climate = null;
+
+        try
+        {
+            climate = sapi.World.BlockAccessor.GetClimateAt(pos);
+        }
+        catch
+        {
+            // keep existing
+        }
+
+        if (climate == null) return; // keep existing
+
+        snapshot.World = new PlayerWorldInfo
+        {
+            AmbientTemperature = climate.Temperature,
+            ClimateTag = GetClimateTag(climate)
+        };
+    }
+
+    private static string GetClimateTag(ClimateCondition climate)
+    {
         var temp = climate.Temperature;
         var rain = climate.Rainfall;
 
-        // Completely invented rules, just to give them cool names.
         return temp switch
         {
             >= 24 when rain >= 0.6f => "tropical",
             >= 18 when rain >= 0.4f => "temperate",
-            <= 0f => "polar",
+            <= 0f => "winter",
             _ => rain <= 0.2f ? "arid" : "unknown"
         };
     }
-
-    private static string NowDate() => DateTime.UtcNow.ToString("yyyy'/'MM'/'dd HH':'mm':'ss");
 }

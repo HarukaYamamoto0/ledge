@@ -1,6 +1,6 @@
-// ReSharper disable PropertyCanBeMadeInitOnly.Global
 // ReSharper disable UnusedAutoPropertyAccessor.Global
 // ReSharper disable AutoPropertyCanBeMadeGetOnly.Global
+// ReSharper disable PropertyCanBeMadeInitOnly.Global
 
 namespace Ledger.Core;
 
@@ -16,18 +16,17 @@ public class PlayerSnapshot
     public PlayerEquipment Equipment { get; set; } = new();
     public PlayerWorldInfo World { get; set; } = new();
 
-    public string FirstJoin { get; set; } = "";
-    public string LastJoin { get; set; } = "";
+    public long FirstJoin { get; set; }
+    public long LastJoin { get; set; }
 }
 
 public class PlayerStats
 {
     public StatRange Health { get; set; } = new();
     public StatRange Hunger { get; set; } = new();
-    public StatRange Stamina { get; set; } = new();
 
-    public int Deaths { get; set; } = 0;
-    public double PlaytimeHours { get; set; } = 0;
+    public int Deaths { get; set; }
+    public long PlaytimeSeconds { get; set; }
 }
 
 public class StatRange
@@ -38,12 +37,13 @@ public class StatRange
 
 public class PlayerEquipment
 {
+    // ReSharper disable once CollectionNeverQueried.Global
     public List<string> Armor { get; set; } = [];
     public string Weapon { get; set; } = "none";
 }
 
 public class PlayerWorldInfo
 {
-    public string Biome { get; set; } = "unknown";
-    public double Temperature { get; set; }
+    public double AmbientTemperature { get; set; }
+    public string ClimateTag { get; set; } = "unknown";
 }

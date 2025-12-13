@@ -10,6 +10,7 @@ namespace Ledger.Server;
 public class LedgerModSystem : ModSystem
 {
     private LedgerService _service = null!;
+    private JsonPlayerStorage? _jsonStorage;
 
     public override void StartServerSide(ICoreServerAPI api)
     {
@@ -25,14 +26,14 @@ public class LedgerModSystem : ModSystem
         var storages = new List<IPlayerStorage>();
         if (config.EnableJson)
         {
-            var jsonStorage = new JsonPlayerStorage(basePath);
+            _jsonStorage = new JsonPlayerStorage(basePath);
             JsonPlayerStorage.CleanupTempFiles(basePath, api);
-            storages.Add(jsonStorage);
+            storages.Add(_jsonStorage);
         }
 
         // TODO: After: if (config.EnableSqlite) storages.Add(new SqlitePlayerStorage(...));
 
-        _service = new LedgerService(api, registry, snapshotProvider, storages);
+        _service = new LedgerService(api, registry, snapshotProvider, storages, _jsonStorage);
 
         api.Event.PlayerJoin += _service.OnPlayerJoin;
         api.Event.PlayerLeave += _service.OnPlayerLeave;
@@ -47,10 +48,10 @@ public class LedgerModSystem : ModSystem
             interval = Constants.MinIntervalSeconds;
         }
 
+        api.World.RegisterGameTickListener(_ => _service.OnIntervalTick(), interval * 1000);
+
         api.Logger.Event(
             $"{Constants.ModLogPrefix} Initialized. Interval: {interval}s, BasePath: {basePath}");
-
-        api.World.RegisterGameTickListener(_ => _service.OnIntervalTick(), interval * 1000);
     }
 
     private static LedgerConfig LoadConfig(ICoreServerAPI api)

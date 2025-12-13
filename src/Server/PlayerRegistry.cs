@@ -1,3 +1,5 @@
+// ReSharper disable ConvertTypeCheckPatternToNullCheck
+
 using Ledger.Core;
 
 namespace Ledger.Server;
@@ -6,7 +8,7 @@ public class PlayerRegistry
 {
     private sealed class RuntimeState
     {
-        public double AccumulatedPlaytimeHours { get; set; }
+        public long AccumulatedPlaytimeSeconds { get; set; }
         public DateTime? OnlineSinceUtc { get; set; }
         public int Deaths { get; set; }
     }
@@ -14,56 +16,33 @@ public class PlayerRegistry
     private readonly Dictionary<string, PlayerSnapshot> _players = new();
     private readonly Dictionary<string, RuntimeState> _state = new();
 
-    public PlayerSnapshot GetOrCreate(string uid, string name, Func<string> nowDateFactory)
+    public IEnumerable<PlayerSnapshot> All => _players.Values;
+
+    public PlayerSnapshot GetOrCreate(string uid, string name, Func<long> nowUnixFactory)
     {
-        if (!_players.TryGetValue(uid, out var snapshot))
-        {
-            snapshot = new PlayerSnapshot
-            {
-                Uid = uid,
-                Name = name,
-                FirstJoin = nowDateFactory(),
-                LastJoin = nowDateFactory()
-            };
-
-            _players[uid] = snapshot;
-        }
-        else
-        {
-            snapshot.Name = name;
-        }
-
-        // Mantém stats “persistentes” na snapshot (via state)
-        var st = GetState(uid);
-        snapshot.Stats.Deaths = st.Deaths;
-        snapshot.Stats.PlaytimeHours = GetPlaytimeHours(uid, DateTime.UtcNow);
-
+        var snapshot = GetOrCreateSnapshot(uid, name, nowUnixFactory);
+        ApplyRuntimeState(uid, snapshot, DateTime.UtcNow);
         return snapshot;
     }
 
-    public IEnumerable<PlayerSnapshot> All => _players.Values;
-
     public void MarkOnline(string uid, DateTime nowUtc)
     {
-        var st = GetState(uid);
-        st.OnlineSinceUtc ??= nowUtc;
+        GetState(uid).OnlineSinceUtc ??= nowUtc;
     }
 
     public void MarkOffline(string uid, DateTime nowUtc)
     {
         var st = GetState(uid);
+        if (st.OnlineSinceUtc is not DateTime since) return;
 
-        if (st.OnlineSinceUtc is DateTime since)
-        {
-            st.AccumulatedPlaytimeHours += (nowUtc - since).TotalHours;
-            st.OnlineSinceUtc = null;
-        }
+        st.AccumulatedPlaytimeSeconds += ElapsedSeconds(since, nowUtc);
+        st.OnlineSinceUtc = null;
     }
 
     public void IncrementDeaths(string uid)
     {
         var st = GetState(uid);
-        st.Deaths += 1;
+        st.Deaths++;
 
         if (_players.TryGetValue(uid, out var snap))
         {
@@ -73,27 +52,73 @@ public class PlayerRegistry
 
     public int GetDeaths(string uid) => GetState(uid).Deaths;
 
-    public double GetPlaytimeHours(string uid, DateTime nowUtc)
+    public long GetPlaytimeSeconds(string uid, DateTime nowUtc)
     {
         var st = GetState(uid);
-        var hours = st.AccumulatedPlaytimeHours;
+        var seconds = st.AccumulatedPlaytimeSeconds;
 
         if (st.OnlineSinceUtc is DateTime since)
         {
-            hours += (nowUtc - since).TotalHours;
+            seconds += ElapsedSeconds(since, nowUtc);
         }
 
-        return Math.Round(hours, 2);
+        return seconds;
+    }
+
+    public void SeedFromPersisted(string uid, int deaths, long playtimeSeconds, long firstJoinUnix)
+    {
+        var st = GetState(uid);
+        st.Deaths = deaths;
+        st.AccumulatedPlaytimeSeconds = playtimeSeconds;
+
+        if (_players.TryGetValue(uid, out var snap))
+        {
+            snap.Stats.Deaths = deaths;
+            snap.Stats.PlaytimeSeconds = playtimeSeconds;
+            snap.FirstJoin = firstJoinUnix;
+        }
+    }
+
+    private PlayerSnapshot GetOrCreateSnapshot(string uid, string name, Func<long> nowUnixFactory)
+    {
+        if (_players.TryGetValue(uid, out var existing))
+        {
+            existing.Name = name;
+            return existing;
+        }
+
+        var nowUnix = nowUnixFactory();
+
+        var created = new PlayerSnapshot
+        {
+            Uid = uid,
+            Name = name,
+            FirstJoin = nowUnix,
+            LastJoin = nowUnix
+        };
+
+        _players[uid] = created;
+        return created;
+    }
+
+    private void ApplyRuntimeState(string uid, PlayerSnapshot snapshot, DateTime nowUtc)
+    {
+        snapshot.Stats.Deaths = GetDeaths(uid);
+        snapshot.Stats.PlaytimeSeconds = GetPlaytimeSeconds(uid, nowUtc);
     }
 
     private RuntimeState GetState(string uid)
     {
-        if (!_state.TryGetValue(uid, out var st))
-        {
-            st = new RuntimeState();
-            _state[uid] = st;
-        }
+        if (_state.TryGetValue(uid, out var st)) return st;
 
+        st = new RuntimeState();
+        _state[uid] = st;
         return st;
     }
+
+    public bool TryGet(string uid, out PlayerSnapshot snapshot) =>
+        _players.TryGetValue(uid, out snapshot!);
+
+    private static long ElapsedSeconds(DateTime sinceUtc, DateTime nowUtc) =>
+        (long)Math.Floor((nowUtc - sinceUtc).TotalSeconds);
 }

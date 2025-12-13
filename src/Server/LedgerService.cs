@@ -1,6 +1,6 @@
 using Ledger.Core;
+using Ledger.Storage;
 using Vintagestory.API.Common;
-using Vintagestory.API.Common.Entities;
 using Vintagestory.API.Server;
 
 namespace Ledger.Server;
@@ -9,45 +9,63 @@ public class LedgerService(
     ICoreServerAPI sapi,
     PlayerRegistry registry,
     IPlayerSnapshotProvider snapshotProvider,
-    IReadOnlyList<IPlayerStorage> storages)
+    IReadOnlyList<IPlayerStorage> storages,
+    JsonPlayerStorage? jsonStorage = null)
 {
     public void OnPlayerJoin(IServerPlayer player)
     {
-        var nowDate = NowDate();
         var nowUtc = DateTime.UtcNow;
+        var snap = registry.GetOrCreate(player.PlayerUID, player.PlayerName, DateUtil.NowUnix);
 
-        var snap = registry.GetOrCreate(player.PlayerUID, player.PlayerName, () => nowDate);
+        if (jsonStorage != null && jsonStorage.TryLoad(player.PlayerUID, out var persisted))
+        {
+            registry.SeedFromPersisted(
+                player.PlayerUID,
+                persisted.Stats.Deaths,
+                persisted.Stats.PlaytimeSeconds,
+                persisted.FirstJoin
+            );
+
+            snap.FirstJoin = persisted.FirstJoin;
+            snap.Stats.Deaths = persisted.Stats.Deaths;
+            snap.Stats.PlaytimeSeconds = persisted.Stats.PlaytimeSeconds;
+        }
+
         snap.Online = true;
-        snap.LastJoin = nowDate;
 
         registry.MarkOnline(player.PlayerUID, nowUtc);
 
+        SyncRuntimeStats(player.PlayerUID, snap, nowUtc);
         Persist(snap);
     }
 
     public void OnPlayerLeave(IServerPlayer player)
     {
-        var nowDate = NowDate();
         var nowUtc = DateTime.UtcNow;
+        var nowUnix = DateUtil.NowUnix();
 
-        var snap = registry.GetOrCreate(player.PlayerUID, player.PlayerName, () => nowDate);
+        var snap = registry.GetOrCreate(player.PlayerUID, player.PlayerName, DateUtil.NowUnix);
+
         snap.Online = false;
-        snap.LastJoin = nowDate;
+        snap.LastJoin = nowUnix;
 
         registry.MarkOffline(player.PlayerUID, nowUtc);
-        snap.Stats.PlaytimeHours = registry.GetPlaytimeHours(player.PlayerUID, nowUtc);
+        SyncRuntimeStats(player.PlayerUID, snap, nowUtc);
 
         Persist(snap);
     }
 
     public void OnPlayerDeath(IServerPlayer byPlayer, DamageSource damageSource)
     {
+        var nowUtc = DateTime.UtcNow;
+        var nowUnix = DateUtil.NowUnix();
+
         registry.IncrementDeaths(byPlayer.PlayerUID);
 
-        var snap = registry.GetOrCreate(byPlayer.PlayerUID, byPlayer.PlayerName, NowDate);
-        snap.Stats.Deaths = registry.GetDeaths(byPlayer.PlayerUID);
-        snap.Stats.PlaytimeHours = registry.GetPlaytimeHours(byPlayer.PlayerUID, DateTime.UtcNow);
+        var snap = registry.GetOrCreate(byPlayer.PlayerUID, byPlayer.PlayerName, DateUtil.NowUnix);
+        snap.LastJoin = nowUnix;
 
+        SyncRuntimeStats(byPlayer.PlayerUID, snap, nowUtc);
         Persist(snap);
     }
 
@@ -60,17 +78,27 @@ public class LedgerService(
             registry.MarkOnline(player.PlayerUID, nowUtc);
 
             var snapshot = snapshotProvider.CreateSnapshotFor(player.PlayerUID);
-            snapshot.Stats.PlaytimeHours = registry.GetPlaytimeHours(player.PlayerUID, nowUtc);
 
+            SyncRuntimeStats(player.PlayerUID, snapshot, nowUtc);
             Persist(snapshot);
         }
 
+        var onlineUids = new HashSet<string>(
+            sapi.World.AllOnlinePlayers.Select(p => p.PlayerUID));
+
         foreach (var regSnap in registry.All)
         {
-            if (sapi.World.AllOnlinePlayers.Any(p => p.PlayerUID == regSnap.Uid)) continue;
+            if (onlineUids.Contains(regSnap.Uid)) continue;
+
             regSnap.Online = false;
             Persist(regSnap);
         }
+    }
+
+    private void SyncRuntimeStats(string uid, PlayerSnapshot snapshot, DateTime nowUtc)
+    {
+        snapshot.Stats.Deaths = registry.GetDeaths(uid);
+        snapshot.Stats.PlaytimeSeconds = registry.GetPlaytimeSeconds(uid, nowUtc);
     }
 
     private void Persist(PlayerSnapshot snapshot)
@@ -80,6 +108,4 @@ public class LedgerService(
             storage.SaveSnapshot(snapshot);
         }
     }
-
-    private static string NowDate() => DateTime.UtcNow.ToString("yyyy-MM-dd");
 }
