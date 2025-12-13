@@ -5,7 +5,7 @@ namespace Ledger.Server;
 public class LedgerConfig
 {
     // Interval in seconds between snapshots
-    public int IntervalSeconds { get; set; } = 60;
+    public int IntervalSeconds { get; set; } = Constants.DefaultIntervalSeconds;
 
     // Optional custom output directory.
     // If empty, Ledger will use the game's ModData folder.
