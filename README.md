@@ -36,6 +36,7 @@ File naming format:
 ```
 <uid>.json
 ```
+> File names use base64url encoding of the player UID to remain filesystem-safe and reversible.
 
 Example output:
 

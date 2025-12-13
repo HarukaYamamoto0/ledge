@@ -10,18 +10,38 @@ public class JsonPlayerStorage(string basePath) : IPlayerStorage
     {
         Directory.CreateDirectory(basePath);
 
-        var finalPath = Path.Combine(basePath, $"{snapshot.Uid}.json");
+        var id = ToBase64Url(snapshot.Uid);
 
-        // Temp file kept in the same directory for atomic replacement
-        // Prefixed with ._ so watchdog scripts can easily ignore it
-        var tempPath = Path.Combine(basePath, $"._{snapshot.Uid}.json.tmp");
+        var finalPath = Path.Combine(basePath, $"{id}.json");
+        var tempPath = Path.Combine(basePath, $"._{id}.json.tmp");
 
         var json = JsonConvert.SerializeObject(snapshot, Formatting.Indented);
 
         File.WriteAllText(tempPath, json);
-
-        // Replace a final file atomically-ish (same directory, cross-platform safe)
         File.Move(tempPath, finalPath, true);
+    }
+
+    public bool TryLoad(string uid, out PlayerSnapshot snapshot)
+    {
+        snapshot = null!;
+
+        var id = ToBase64Url(uid);
+        var finalPath = Path.Combine(basePath, $"{id}.json");
+        if (!File.Exists(finalPath)) return false;
+
+        try
+        {
+            var json = File.ReadAllText(finalPath);
+            var obj = JsonConvert.DeserializeObject<PlayerSnapshot>(json);
+            if (obj == null) return false;
+
+            snapshot = obj;
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
     }
 
     public static void CleanupTempFiles(string basePath, ICoreServerAPI api)
@@ -42,25 +62,27 @@ public class JsonPlayerStorage(string basePath) : IPlayerStorage
         }
     }
 
-    public bool TryLoad(string uid, out PlayerSnapshot snapshot)
+    private static string ToBase64Url(string base64)
     {
-        snapshot = null!;
+        return base64
+            .Replace('+', '-')
+            .Replace('/', '_')
+            .TrimEnd('=');
+    }
 
-        var finalPath = Path.Combine(basePath, $"{uid}.json");
-        if (!File.Exists(finalPath)) return false;
+    // Optional helper for consumers / debugging
+    private static string FromBase64Url(string base64Url)
+    {
+        var padded = base64Url
+            .Replace('-', '+')
+            .Replace('_', '/');
 
-        try
+        switch (padded.Length % 4)
         {
-            var json = File.ReadAllText(finalPath);
-            var obj = JsonConvert.DeserializeObject<PlayerSnapshot>(json);
-            if (obj == null) return false;
+            case 2: padded += "=="; break;
+            case 3: padded += "="; break;
+        }
 
-            snapshot = obj;
-            return true;
-        }
-        catch
-        {
-            return false;
-        }
+        return padded;
     }
 }
