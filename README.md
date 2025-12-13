@@ -9,7 +9,7 @@ The project focuses on **simplicity, predictability, and minimal server impact**
 * Runs **exclusively on the server**
 * Generates **one JSON file per player**
 * Updates data at configurable intervals
-* Maintains consistent state even when:
+* Maintains a consistent state even when:
 
   * players are offline
   * players are dead
