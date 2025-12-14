@@ -26,18 +26,14 @@ The generated files are suitable for:
 
 By default, Ledger writes files to:
 
-```
-
+```shell
 <VintagestoryData>/ModData/ledger/
-
 ```
 
 File naming format:
 
-```
-
+```shell
 <uid>.json
-
 ````
 
 > File names use **base64url encoding** of the player UID to remain filesystem-safe and reversible.
@@ -46,37 +42,69 @@ File naming format:
 
 ```json
 {
-  "SchemaVersion": 1,
-  "Uid": "TB1I6bIpn69Pu5V52kVw-s3s",
+  "SchemaVersion": 2,
+  "Uid": "Te6I6bIpn69Pu5V52kVw-s3s",
   "Name": "harukadev",
   "Online": true,
+  "Meta": {
+    "FirstJoin": 1765672656,
+    "LastJoin": 1765672797,
+    "LastSeen": 1765673706
+  },
+  "Location": {
+    "X": 25,
+    "Y": 4,
+    "Z": -6
+  },
   "Stats": {
     "Health": {
-      "Current": 20.0,
-      "Max": 21.0
+      "Current": 15.09333324432373,
+      "Max": 15.09333324432373
     },
     "Hunger": {
-      "Current": 950.0,
-      "Max": 1900.0
+      "Current": 750.0,
+      "Max": 1500.0
     },
-    "Deaths": 2,
-    "PlaytimeSeconds": 627
+    "Deaths": 0,
+    "PlaytimeSeconds": 1044,
+    "PingMs": 34,
+    "Privileges": [
+      "announce",
+      "areamodify",
+      "attackcreatures",
+      "attackplayers",
+      "ban",
+      "time",
+      "...",
+      "useblockseverywhere",
+      "whitelist",
+      "worldedit"
+    ]
   },
   "Equipment": {
     "Armor": [
-      "armor-head-plate-iron",
-      "armor-body-chain-blackbronze",
-      "armor-legs-tailored-yellow-linen"
+      "armor-head-scale-iron",
+      "armor-body-brigandine-blackbronze",
+      "armor-legs-tailored-black-linen"
     ],
-    "HeldItem": "blade-longsword-admin",
-    "Weapon": "none"
+    "HeldItem": "termitemound-harvested-chert-large",
+    "Hotbar": [
+      "termitemound-harvested-chert-large",
+      "none",
+      "none",
+      "none",
+      "none",
+      "none",
+      "none",
+      "none",
+      "none",
+      "none"
+    ]
   },
   "World": {
-    "AmbientTemperature": 18.03,
+    "AmbientTemperature": 25.06141471862793,
     "ClimateTag": "arid"
-  },
-  "FirstJoin": 1765592936,
-  "LastJoin": 1765593661
+  }
 }
 ````
 
@@ -94,8 +122,6 @@ Examples:
 
 * Offline players may not have updated world or equipment data
 * Some fields may be absent instead of explicitly set to `null`
-
----
 
 ### Name Field (`Name`)
 
