@@ -5,13 +5,12 @@ using Vintagestory.API.Server;
 
 namespace Ledger.Server;
 
-public class VsPlayerSnapshotProvider(
-    ICoreServerAPI sapi,
-    PlayerRegistry registry,
-    CaptureConfig capture
-) : IPlayerSnapshotProvider
+public class VsPlayerSnapshotProvider(ICoreServerAPI sapi, PlayerRegistry registry, LedgerConfig config)
+    : IPlayerSnapshotProvider
 {
     private static readonly int[] ArmorSlots = [12, 13, 14];
+
+    private CaptureConfig _config = config.Capture;
 
     public PlayerSnapshot CreateSnapshotFor(string uid)
     {
@@ -28,18 +27,24 @@ public class VsPlayerSnapshotProvider(
         snap.Online = true;
 
         var entity = player.Entity;
+        var cap = _config;
 
-        if (capture.Vitals) FillVitalsOrKeepPrevious(snap, entity);
-        if (capture.Tiredness) FillTirednessOrKeepPrevious(snap, entity);
+        if (cap.Vitals) FillVitalsOrKeepPrevious(snap, entity);
+        if (cap.Tiredness) FillTirednessOrKeepPrevious(snap, entity);
 
-        if (capture.Ping) FillPingOrKeepPrevious(snap, player);
-        if (capture.Privileges) FillPrivilegesOrKeepPrevious(snap, player);
+        if (cap.Ping) FillPingOrKeepPrevious(snap, player);
+        if (cap.Privileges) FillPrivilegesOrKeepPrevious(snap, player);
 
-        if (capture.Equipment) FillEquipmentOrKeepPrevious(snap, player, capture.Hotbar);
-        if (capture.Location) FillLocationOrKeepPrevious(snap, entity);
-        if (capture.World) FillWorldOrKeepPrevious(snap, entity);
+        if (cap.Equipment) FillEquipmentOrKeepPrevious(snap, player, cap.Hotbar);
+        if (cap.Location) FillLocationOrKeepPrevious(snap, entity);
+        if (cap.World) FillWorldOrKeepPrevious(snap, entity);
 
         return snap;
+    }
+
+    public void UpdateCapture(CaptureConfig capture)
+    {
+        _config = capture;
     }
 
     private static void FillVitalsOrKeepPrevious(PlayerSnapshot snapshot, Entity entity)

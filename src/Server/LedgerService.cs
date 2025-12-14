@@ -130,4 +130,9 @@ public class LedgerService(
         foreach (var storage in storages)
             storage.SaveSnapshot(snapshot);
     }
+
+    public void UpdateCaptureConfig(CaptureConfig capture)
+    {
+        snapshotProvider.UpdateCapture(capture);
+    }
 }

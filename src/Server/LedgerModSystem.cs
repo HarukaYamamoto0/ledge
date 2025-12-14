@@ -31,7 +31,7 @@ public class LedgerModSystem : ModSystem
         }
 
         var registry = new PlayerRegistry();
-        var snapshotProvider = new VsPlayerSnapshotProvider(api, registry, config.Capture);
+        var snapshotProvider = new VsPlayerSnapshotProvider(api, registry, config);
 
         var storages = new List<IPlayerStorage>();
 
@@ -49,6 +49,24 @@ public class LedgerModSystem : ModSystem
         api.Event.PlayerDeath += _service.OnPlayerDeath;
 
         api.World.RegisterGameTickListener(_ => _service.OnIntervalTick(), interval * 1000);
+
+        api.ChatCommands
+            .Create("ledger")
+            .WithDescription("Ledger commands")
+            .RequiresPrivilege(Privilege.controlserver)
+            .BeginSubCommand("reload")
+            .WithDescription("Reload Ledger configuration")
+            .HandleWith(args =>
+            {
+                if (args.Caller.Player is not IServerPlayer)
+                {
+                    return TextCommandResult.Error("This command can only be used server-side.");
+                }
+
+                ReloadConfig(api);
+                return TextCommandResult.Success("Ledger config reloaded.");
+            })
+            .EndSubCommand();
 
         api.Logger.Event(
             $"{Constants.ModLogPrefix} Initialized. Interval: {interval}s, BasePath: {basePath}");
@@ -69,5 +87,22 @@ public class LedgerModSystem : ModSystem
         }
 
         return config;
+    }
+
+    private void ReloadConfig(ICoreServerAPI api)
+    {
+        try
+        {
+            var config = LoadConfig(api);
+
+            _service.UpdateCaptureConfig(config.Capture);
+
+            api.Logger.Event($"{Constants.ModLogPrefix} Config reloaded via command.");
+        }
+        catch (Exception ex)
+        {
+            api.Logger.Error($"{Constants.ModLogPrefix} Reload failed: {ex}");
+            throw;
+        }
     }
 }

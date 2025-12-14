@@ -1,6 +1,7 @@
 # Ledger
 
-Ledger is a **server-side Vintage Story mod** that periodically exports player data to **JSON**, allowing bots, dashboards, and external tools to consume game information **without directly interacting with the game engine**.
+Ledger is a **server-side Vintage Story mod** that periodically exports player data to **JSON**, allowing bots,
+dashboards, and external tools to consume game information **without directly interacting with the game engine**.
 
 The project focuses on **simplicity, predictability, and minimal server impact**.
 
@@ -10,9 +11,9 @@ The project focuses on **simplicity, predictability, and minimal server impact**
 * Generates **one JSON file per player**
 * Updates data at configurable intervals
 * Maintains a consistent state even when:
-  * players are offline
-  * players are dead
-  * chunks are unloaded
+    * players are offline
+    * players are dead
+    * chunks are unloaded
 * Uses **Unix timestamps** for easy consumption by bots (e.g. Discord)
 
 The generated files are suitable for:
@@ -125,7 +126,7 @@ Examples:
 
 ### Name Field (`Name`)
 
-* When the player name cannot be resolved (e.g. offline with no prior data), `Name` will be set to:
+* When the player name cannot be resolved (e.g., offline with no prior data), `Name` will be set to:
 
 ```
 "Unknown"
@@ -151,6 +152,39 @@ When the player joins again, the correct name will automatically replace it.
 * Missing `SchemaVersion` should be treated as version `1`
 * Future versions may add, rename, or remove fields
 * Consumers are expected to tolerate forward-compatible changes
+
+## Commands
+
+Ledger provides a small set of **server-side chat commands** for administration and runtime control.
+
+### `/ledger reload`
+
+Reloads the Ledger configuration **without restarting the server**.
+
+This command re-reads `ledgerconfig.json` and immediately applies the new `Capture` settings to later snapshots.
+
+**Behavior:**
+
+* Applies changes to `Capture.*` options immediately
+* Does **not** change the snapshot interval (`IntervalSeconds`)
+* Does **not** reset or rewrite existing player data
+* Safe to run while the server is online
+
+**Usage:**
+
+```text
+/ledger reload
+```
+
+**Requirements:**
+
+* Server-side only
+* Requires the `controlserver` privilege
+
+**Notes for administrators:**
+
+* If you change `IntervalSeconds`, a server restart is still required
+* This command is intended for fine-tuning what data is captured without interrupting gameplay
 
 ## Safe File Writing (Important)
 
@@ -225,7 +259,8 @@ Example configuration:
 
 The `Capture` section controls which fields are collected and written to the JSON snapshot.
 
-When a capture option is disabled, Ledger will generally **keep the previous value** (instead of overwriting with defaults).
+When a capture option is disabled, Ledger will generally **keep the previous value** (instead of overwriting with
+defaults).
 
 * `Vitals`
   Health and hunger.
