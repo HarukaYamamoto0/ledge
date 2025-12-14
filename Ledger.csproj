@@ -8,7 +8,7 @@
         <OutputPath>bin/$(Configuration)/Mods/ledger/</OutputPath>
 
         <ZipName>ledger</ZipName>
-        <ModVersion>0.1.1</ModVersion>
+        <ModVersion>1.0.0</ModVersion>
         <ReleaseDir>$(ProjectDir)Releases</ReleaseDir>
     </PropertyGroup>
 
