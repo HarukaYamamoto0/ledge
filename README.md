@@ -28,13 +28,13 @@ By default, Ledger writes files to:
 
 ```shell
 <VintagestoryData>/ModData/ledger/
-```
+````
 
 File naming format:
 
 ```shell
 <uid>.json
-````
+```
 
 > File names use **base64url encoding** of the player UID to remain filesystem-safe and reversible.
 
@@ -106,7 +106,7 @@ File naming format:
     "ClimateTag": "arid"
   }
 }
-````
+```
 
 ## ⚠️ Important Notes for Consumers
 
@@ -125,7 +125,7 @@ Examples:
 
 ### Name Field (`Name`)
 
-* When the player name cannot be resolved (e.g., offline with no prior data), `Name` will be set to:
+* When the player name cannot be resolved (e.g. offline with no prior data), `Name` will be set to:
 
 ```
 "Unknown"
@@ -140,11 +140,9 @@ When the player joins again, the correct name will automatically replace it.
 * `HeldItem`
   Represents the item currently held in the **active hotbar slot**.
 
-* `Weapon`
-  Reserved for future use.
-  Currently, it has **no defined behavior** and may be removed or repurposed in later versions.
-
-Consumers should prefer `HeldItem`.
+* `Hotbar`
+  A fixed-size list (10 entries) representing the player's hotbar.
+  Empty slots are exported as `"none"`.
 
 ### SchemaVersion
 
@@ -198,7 +196,16 @@ Example configuration:
   "IntervalSeconds": 60,
   "BasePath": "",
   "EnableJson": true,
-  "EnableSqlite": false
+  "Capture": {
+    "Vitals": true,
+    "Tiredness": false,
+    "Ping": true,
+    "Privileges": true,
+    "Location": true,
+    "World": true,
+    "Equipment": true,
+    "Hotbar": false
+  }
 }
 ```
 
@@ -213,6 +220,36 @@ Example configuration:
 * `BasePath`
   Optional custom output directory.
   Leave empty to use the default ModData path.
+
+### Capture Filters
+
+The `Capture` section controls which fields are collected and written to the JSON snapshot.
+
+When a capture option is disabled, Ledger will generally **keep the previous value** (instead of overwriting with defaults).
+
+* `Vitals`
+  Health and hunger.
+
+* `Tiredness`
+  Tiredness value (if available).
+
+* `Ping`
+  Player ping in milliseconds (when online).
+
+* `Privileges`
+  List of privileges for the player.
+
+* `Location`
+  Player coordinates (X/Y/Z).
+
+* `World`
+  Ambient temperature and climate tag.
+
+* `Equipment`
+  Armor and held item.
+
+* `Hotbar`
+  When enabled, exports the full hotbar list (10 entries).
 
 ## What Ledger Does **Not** Do (By Design)
 

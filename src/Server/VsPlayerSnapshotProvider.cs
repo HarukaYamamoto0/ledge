@@ -5,13 +5,16 @@ using Vintagestory.API.Server;
 
 namespace Ledger.Server;
 
-public class VsPlayerSnapshotProvider(ICoreServerAPI sapi, PlayerRegistry registry) : IPlayerSnapshotProvider
+public class VsPlayerSnapshotProvider(
+    ICoreServerAPI sapi,
+    PlayerRegistry registry,
+    CaptureConfig capture
+) : IPlayerSnapshotProvider
 {
     private static readonly int[] ArmorSlots = [12, 13, 14];
 
     public PlayerSnapshot CreateSnapshotFor(string uid)
     {
-        // Always start from a registry snapshot to avoid accidental resets
         var snap = registry.GetOrCreate(uid, "", DateUtil.NowUnix);
 
         if (sapi.World.PlayerByUid(uid) is not IServerPlayer player)
@@ -26,15 +29,15 @@ public class VsPlayerSnapshotProvider(ICoreServerAPI sapi, PlayerRegistry regist
 
         var entity = player.Entity;
 
-        FillVitalsOrKeepPrevious(snap, entity);
-        FillTirednessOrKeepPrevious(snap, entity);
+        if (capture.Vitals) FillVitalsOrKeepPrevious(snap, entity);
+        if (capture.Tiredness) FillTirednessOrKeepPrevious(snap, entity);
 
-        FillPingOrKeepPrevious(snap, player);
-        FillPrivilegesOrKeepPrevious(snap, player);
+        if (capture.Ping) FillPingOrKeepPrevious(snap, player);
+        if (capture.Privileges) FillPrivilegesOrKeepPrevious(snap, player);
 
-        FillEquipmentOrKeepPrevious(snap, player);
-        FillLocationOrKeepPrevious(snap, entity);
-        FillWorldOrKeepPrevious(snap, entity);
+        if (capture.Equipment) FillEquipmentOrKeepPrevious(snap, player, capture.Hotbar);
+        if (capture.Location) FillLocationOrKeepPrevious(snap, entity);
+        if (capture.World) FillWorldOrKeepPrevious(snap, entity);
 
         return snap;
     }
@@ -74,12 +77,11 @@ public class VsPlayerSnapshotProvider(ICoreServerAPI sapi, PlayerRegistry regist
         {
             var t = watched.GetFloat("tiredness", float.NaN);
             if (float.IsNaN(t) || float.IsInfinity(t)) return;
-
             snapshot.Stats.Tiredness = t;
         }
         catch
         {
-            Nothing();
+            // ignored
         }
     }
 
@@ -87,15 +89,13 @@ public class VsPlayerSnapshotProvider(ICoreServerAPI sapi, PlayerRegistry regist
     {
         try
         {
-            // Ping is in seconds; NaN is not connected.
             var pingSeconds = player.Ping;
             if (float.IsNaN(pingSeconds) || float.IsInfinity(pingSeconds) || pingSeconds < 0) return;
-
             snapshot.Stats.PingMs = (int)Math.Round(pingSeconds * 1000f);
         }
         catch
         {
-            Nothing();
+            // ignored
         }
     }
 
@@ -103,11 +103,9 @@ public class VsPlayerSnapshotProvider(ICoreServerAPI sapi, PlayerRegistry regist
     {
         try
         {
-            // On server this is generally available. If it comes empty/null, we keep previous.
             var privileges = player.Privileges;
             if (privileges == null || privileges.Length == 0) return;
 
-            // Normalize + remove duplicates
             snapshot.Stats.Privileges = privileges
                 .Where(p => !string.IsNullOrWhiteSpace(p))
                 .Select(p => p.Trim())
@@ -117,15 +115,14 @@ public class VsPlayerSnapshotProvider(ICoreServerAPI sapi, PlayerRegistry regist
         }
         catch
         {
-            Nothing();
+            // ignored
         }
     }
 
-    private static void FillEquipmentOrKeepPrevious(PlayerSnapshot snapshot, IServerPlayer player)
+    private static void FillEquipmentOrKeepPrevious(PlayerSnapshot snapshot, IServerPlayer player, bool includeHotbar)
     {
         var equipment = snapshot.Equipment;
 
-        // Armor
         var inv = player.InventoryManager.GetOwnInventory("character");
         if (inv != null)
         {
@@ -145,38 +142,41 @@ public class VsPlayerSnapshotProvider(ICoreServerAPI sapi, PlayerRegistry regist
             equipment.Armor = armor;
         }
 
-        // Hotbar (fixed 10)
         var hotbar = player.InventoryManager.GetHotbarInventory();
         if (hotbar != null)
         {
-            var list = new List<string>(10);
-
-            var count = Math.Min(10, hotbar.Count);
-            for (var i = 0; i < count; i++)
-            {
-                var slot = hotbar[i];
-                list.Add(slot.Empty
-                    ? "none"
-                    : (slot.Itemstack?.Collectible?.Code?.ToShortString() ?? "unknown"));
-            }
-
-            while (list.Count < 10) list.Add("none");
-
-            equipment.Hotbar = list;
-
-            // HeldItem: active slot
             var activeIndex = player.InventoryManager.ActiveHotbarSlotNumber;
-            if (activeIndex >= 0 &&
-                activeIndex < hotbar.Count &&
-                !hotbar[activeIndex].Empty)
+
+            if (activeIndex >= 0 && activeIndex < hotbar.Count && !hotbar[activeIndex].Empty)
             {
                 equipment.HeldItem =
                     hotbar[activeIndex].Itemstack?.Collectible?.Code?.ToShortString() ?? "unknown";
             }
-            // If active slot invalid/empty, keep the previous HeldItem
+
+            if (includeHotbar)
+            {
+                equipment.Hotbar = ReadHotbarFixed10(hotbar);
+            }
         }
 
         snapshot.Equipment = equipment;
+    }
+
+    private static List<string> ReadHotbarFixed10(IInventory hotbar)
+    {
+        var list = new List<string>(10);
+
+        var count = Math.Min(10, hotbar.Count);
+        for (var i = 0; i < count; i++)
+        {
+            var slot = hotbar[i];
+            list.Add(slot.Empty
+                ? "none"
+                : (slot.Itemstack?.Collectible?.Code?.ToShortString() ?? "unknown"));
+        }
+
+        while (list.Count < 10) list.Add("none");
+        return list;
     }
 
     private void FillLocationOrKeepPrevious(PlayerSnapshot snapshot, Entity entity)
@@ -200,24 +200,21 @@ public class VsPlayerSnapshotProvider(ICoreServerAPI sapi, PlayerRegistry regist
         var pos = entity.Pos?.AsBlockPos;
         if (pos == null) return;
 
-        ClimateCondition? climate = null;
-
         try
         {
-            climate = sapi.World.BlockAccessor.GetClimateAt(pos);
+            var climate = sapi.World.BlockAccessor.GetClimateAt(pos);
+            if (climate == null) return;
+
+            snapshot.World = new PlayerWorldInfo
+            {
+                AmbientTemperature = climate.Temperature,
+                ClimateTag = GetClimateTag(climate)
+            };
         }
         catch
         {
-            Nothing();
+            // ignored
         }
-
-        if (climate == null) return;
-
-        snapshot.World = new PlayerWorldInfo
-        {
-            AmbientTemperature = climate.Temperature,
-            ClimateTag = GetClimateTag(climate)
-        };
     }
 
     private static double FiniteOrZero(float value)
@@ -238,10 +235,5 @@ public class VsPlayerSnapshotProvider(ICoreServerAPI sapi, PlayerRegistry regist
             <= 0f => "winter",
             _ => rain <= 0.2f ? "arid" : "unknown"
         };
-    }
-
-    private static void Nothing()
-    {
-        // Nothing to do here
     }
 }

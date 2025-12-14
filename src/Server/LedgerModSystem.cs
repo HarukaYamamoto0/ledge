@@ -20,10 +20,21 @@ public class LedgerModSystem : ModSystem
             ? api.GetOrCreateDataPath(Constants.DefaultBasePath)
             : config.BasePath;
 
+        var interval = config.IntervalSeconds < Constants.MinIntervalSeconds
+            ? Constants.MinIntervalSeconds
+            : config.IntervalSeconds;
+
+        if (interval != config.IntervalSeconds)
+        {
+            api.Logger.Warning(
+                $"{Constants.ModLogPrefix} IntervalSeconds too low, clamping to {Constants.MinIntervalSeconds}s");
+        }
+
         var registry = new PlayerRegistry();
-        var snapshotProvider = new VsPlayerSnapshotProvider(api, registry);
+        var snapshotProvider = new VsPlayerSnapshotProvider(api, registry, config.Capture);
 
         var storages = new List<IPlayerStorage>();
+
         if (config.EnableJson)
         {
             _jsonStorage = new JsonPlayerStorage(basePath);
@@ -36,15 +47,6 @@ public class LedgerModSystem : ModSystem
         api.Event.PlayerJoin += _service.OnPlayerJoin;
         api.Event.PlayerLeave += _service.OnPlayerLeave;
         api.Event.PlayerDeath += _service.OnPlayerDeath;
-
-        var interval = config.IntervalSeconds;
-
-        if (interval < Constants.MinIntervalSeconds)
-        {
-            api.Logger.Warning(
-                $"{Constants.ModLogPrefix} IntervalSeconds too low, clamping to {Constants.MinIntervalSeconds}s");
-            interval = Constants.MinIntervalSeconds;
-        }
 
         api.World.RegisterGameTickListener(_ => _service.OnIntervalTick(), interval * 1000);
 

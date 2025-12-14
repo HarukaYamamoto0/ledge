@@ -13,4 +13,18 @@ public class LedgerConfig
 
     // Enable JSON file output
     public bool EnableJson { get; set; } = true;
+
+    public CaptureConfig Capture { get; set; } = new();
+}
+
+public class CaptureConfig
+{
+    public bool Vitals { get; set; } = true;
+    public bool Tiredness { get; set; } = false;
+    public bool Ping { get; set; } = true;
+    public bool Privileges { get; set; } = true;
+    public bool Location { get; set; } = true;
+    public bool World { get; set; } = true;
+    public bool Equipment { get; set; } = true;
+    public bool Hotbar { get; set; } = false;
 }
