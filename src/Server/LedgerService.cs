@@ -15,23 +15,28 @@ public class LedgerService(
     public void OnPlayerJoin(IServerPlayer player)
     {
         var nowUtc = DateTime.UtcNow;
+        var nowUnix = DateUtil.NowUnix();
+
         var snap = registry.GetOrCreate(player.PlayerUID, player.PlayerName, DateUtil.NowUnix);
 
+        // Seed persisted stats/meta (only once, on join)
         if (jsonStorage != null && jsonStorage.TryLoad(player.PlayerUID, out var persisted))
         {
             registry.SeedFromPersisted(
                 player.PlayerUID,
                 persisted.Stats.Deaths,
                 persisted.Stats.PlaytimeSeconds,
-                persisted.FirstJoin
+                persisted.Meta.FirstJoin
             );
 
-            snap.FirstJoin = persisted.FirstJoin;
-            snap.Stats.Deaths = persisted.Stats.Deaths;
-            snap.Stats.PlaytimeSeconds = persisted.Stats.PlaytimeSeconds;
+            // Keep canonical meta from a persisted file
+            snap.Meta.FirstJoin = persisted.Meta.FirstJoin;
+            snap.Meta.LastJoin = persisted.Meta.LastJoin; // will be overwritten just below
         }
 
         snap.Online = true;
+        snap.Meta.LastJoin = nowUnix;
+        snap.Meta.LastSeen = nowUnix;
 
         registry.MarkOnline(player.PlayerUID, nowUtc);
 
@@ -47,11 +52,11 @@ public class LedgerService(
         var snap = registry.GetOrCreate(player.PlayerUID, player.PlayerName, DateUtil.NowUnix);
 
         snap.Online = false;
-        snap.LastJoin = nowUnix;
+        snap.Meta.LastSeen = nowUnix;
 
         registry.MarkOffline(player.PlayerUID, nowUtc);
-        SyncRuntimeStats(player.PlayerUID, snap, nowUtc);
 
+        SyncRuntimeStats(player.PlayerUID, snap, nowUtc);
         Persist(snap);
     }
 
@@ -63,7 +68,9 @@ public class LedgerService(
         registry.IncrementDeaths(byPlayer.PlayerUID);
 
         var snap = registry.GetOrCreate(byPlayer.PlayerUID, byPlayer.PlayerName, DateUtil.NowUnix);
-        snap.LastJoin = nowUnix;
+
+        // Death is a "seen" event
+        snap.Meta.LastSeen = nowUnix;
 
         SyncRuntimeStats(byPlayer.PlayerUID, snap, nowUtc);
         Persist(snap);
@@ -72,25 +79,32 @@ public class LedgerService(
     public void OnIntervalTick()
     {
         var nowUtc = DateTime.UtcNow;
+        var nowUnix = DateUtil.NowUnix();
 
+        // Online players: create fresh snapshots via provider
         foreach (var player in sapi.World.AllOnlinePlayers.Cast<IServerPlayer>())
         {
             registry.MarkOnline(player.PlayerUID, nowUtc);
 
             var snapshot = snapshotProvider.CreateSnapshotFor(player.PlayerUID);
+            snapshot.Online = true;
+            snapshot.Meta.LastSeen = nowUnix;
 
             SyncRuntimeStats(player.PlayerUID, snapshot, nowUtc);
             Persist(snapshot);
         }
 
-        var onlineUids = new HashSet<string>(
-            sapi.World.AllOnlinePlayers.Select(p => p.PlayerUID));
+        // Offline players: persist registry snapshots without wiping fields
+        var onlineUids = new HashSet<string>(sapi.World.AllOnlinePlayers.Select(p => p.PlayerUID));
 
         foreach (var regSnap in registry.All)
         {
             if (onlineUids.Contains(regSnap.Uid)) continue;
 
             regSnap.Online = false;
+
+            // Do NOT bump LastSeen for offline players here,
+            // otherwise consumers can't tell how old the data is.
             Persist(regSnap);
         }
     }
@@ -103,8 +117,15 @@ public class LedgerService(
 
     private void Persist(PlayerSnapshot snapshot)
     {
+        // Sanitization guards (prevents null poisoning and keeps JSON stable)
         if (string.IsNullOrWhiteSpace(snapshot.Name))
             snapshot.Name = "Unknown";
+
+        // Ensure meta exists and has sane values
+
+        // If FirstJoin is missing (e.g., legacy file), set it at first persist
+        if (snapshot.Meta.FirstJoin <= 0)
+            snapshot.Meta.FirstJoin = DateUtil.NowUnix();
 
         foreach (var storage in storages)
             storage.SaveSnapshot(snapshot);

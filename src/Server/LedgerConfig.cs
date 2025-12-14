@@ -13,7 +13,4 @@ public class LedgerConfig
 
     // Enable JSON file output
     public bool EnableJson { get; set; } = true;
-
-    // Enable SQLite storage (not implemented yet)
-    public bool EnableSqlite { get; set; } = false; // TODO: Implement later...
 }

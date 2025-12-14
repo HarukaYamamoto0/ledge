@@ -18,17 +18,21 @@ public class PlayerRegistry
 
     public IEnumerable<PlayerSnapshot> All => _players.Values;
 
-    public PlayerSnapshot GetOrCreate(string uid, string name, Func<long> nowUnixFactory)
+    public PlayerSnapshot GetOrCreate(string uid, string name, Func<long> nowUnixFactory, DateTime nowUtc)
     {
         var snapshot = GetOrCreateSnapshot(uid, name, nowUnixFactory);
-        ApplyRuntimeState(uid, snapshot, DateTime.UtcNow);
+        ApplyRuntimeState(uid, snapshot, nowUtc);
         return snapshot;
     }
 
-    public void MarkOnline(string uid, DateTime nowUtc)
-    {
+    public PlayerSnapshot GetOrCreate(string uid, string name, Func<long> nowUnixFactory) =>
+        GetOrCreate(uid, name, nowUnixFactory, DateTime.UtcNow);
+
+    public bool TryGet(string uid, out PlayerSnapshot snapshot) =>
+        _players.TryGetValue(uid, out snapshot!);
+
+    public void MarkOnline(string uid, DateTime nowUtc) =>
         GetState(uid).OnlineSinceUtc ??= nowUtc;
-    }
 
     public void MarkOffline(string uid, DateTime nowUtc)
     {
@@ -45,9 +49,7 @@ public class PlayerRegistry
         st.Deaths++;
 
         if (_players.TryGetValue(uid, out var snap))
-        {
             snap.Stats.Deaths = st.Deaths;
-        }
     }
 
     public int GetDeaths(string uid) => GetState(uid).Deaths;
@@ -58,9 +60,7 @@ public class PlayerRegistry
         var seconds = st.AccumulatedPlaytimeSeconds;
 
         if (st.OnlineSinceUtc is DateTime since)
-        {
             seconds += ElapsedSeconds(since, nowUtc);
-        }
 
         return seconds;
     }
@@ -75,7 +75,7 @@ public class PlayerRegistry
         {
             snap.Stats.Deaths = deaths;
             snap.Stats.PlaytimeSeconds = playtimeSeconds;
-            snap.FirstJoin = firstJoinUnix;
+            snap.Meta.FirstJoin = firstJoinUnix;
         }
     }
 
@@ -95,8 +95,12 @@ public class PlayerRegistry
         {
             Uid = uid,
             Name = string.IsNullOrWhiteSpace(name) ? "Unknown" : name,
-            FirstJoin = nowUnix,
-            LastJoin = nowUnix
+            Meta = new PlayerMeta
+            {
+                FirstJoin = nowUnix,
+                LastJoin = nowUnix,
+                LastSeen = 0
+            }
         };
 
         _players[uid] = created;
@@ -117,9 +121,6 @@ public class PlayerRegistry
         _state[uid] = st;
         return st;
     }
-
-    public bool TryGet(string uid, out PlayerSnapshot snapshot) =>
-        _players.TryGetValue(uid, out snapshot!);
 
     private static long ElapsedSeconds(DateTime sinceUtc, DateTime nowUtc) =>
         (long)Math.Floor((nowUtc - sinceUtc).TotalSeconds);

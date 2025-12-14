@@ -12,30 +12,31 @@ public class VsPlayerSnapshotProvider(ICoreServerAPI sapi, PlayerRegistry regist
     public PlayerSnapshot CreateSnapshotFor(string uid)
     {
         // Always start from a registry snapshot to avoid accidental resets
-        var baseSnap = registry.GetOrCreate(uid, "", DateUtil.NowUnix);
+        var snap = registry.GetOrCreate(uid, "", DateUtil.NowUnix);
 
         if (sapi.World.PlayerByUid(uid) is not IServerPlayer player)
         {
-            baseSnap.Online = false;
-            return baseSnap;
+            snap.Online = false;
+            return snap;
         }
 
-        baseSnap.Uid = player.PlayerUID;
-        baseSnap.Name = player.PlayerName;
-        baseSnap.Online = true;
+        snap.Uid = player.PlayerUID;
+        snap.Name = player.PlayerName;
+        snap.Online = true;
 
         var entity = player.Entity;
 
-        // Stats we can safely read (health/hunger) overwrite; others stay as-is (deaths/playtime from registry)
-        FillVitalsOrKeepPrevious(baseSnap, entity);
+        FillVitalsOrKeepPrevious(snap, entity);
+        FillTirednessOrKeepPrevious(snap, entity);
 
-        // Equipment overwrite (safe)
-        FillEquipment(baseSnap, player);
+        FillPingOrKeepPrevious(snap, player);
+        FillPrivilegesOrKeepPrevious(snap, player);
 
-        // World overwrite only if available; otherwise keep previous
-        FillWorldOrKeepPrevious(baseSnap, entity);
+        FillEquipmentOrKeepPrevious(snap, player);
+        FillLocationOrKeepPrevious(snap, entity);
+        FillWorldOrKeepPrevious(snap, entity);
 
-        return baseSnap;
+        return snap;
     }
 
     private static void FillVitalsOrKeepPrevious(PlayerSnapshot snapshot, Entity entity)
@@ -62,20 +63,69 @@ public class VsPlayerSnapshotProvider(ICoreServerAPI sapi, PlayerRegistry regist
                 Max = FiniteOrZero(hunger.GetFloat("maxsaturation"))
             };
         }
-
-        // Do NOT touch Deaths / PlaytimeSeconds here, registry is the source
     }
 
-    private static double FiniteOrZero(float value)
+    private static void FillTirednessOrKeepPrevious(PlayerSnapshot snapshot, Entity entity)
     {
-        if (float.IsNaN(value) || float.IsInfinity(value)) return 0d;
-        return value;
+        var watched = entity.WatchedAttributes;
+        if (watched == null) return;
+
+        try
+        {
+            var t = watched.GetFloat("tiredness", float.NaN);
+            if (float.IsNaN(t) || float.IsInfinity(t)) return;
+
+            snapshot.Stats.Tiredness = t;
+        }
+        catch
+        {
+            Nothing();
+        }
     }
 
-    private static void FillEquipment(PlayerSnapshot snapshot, IServerPlayer player)
+    private static void FillPingOrKeepPrevious(PlayerSnapshot snapshot, IServerPlayer player)
+    {
+        try
+        {
+            // Ping is in seconds; NaN is not connected.
+            var pingSeconds = player.Ping;
+            if (float.IsNaN(pingSeconds) || float.IsInfinity(pingSeconds) || pingSeconds < 0) return;
+
+            snapshot.Stats.PingMs = (int)Math.Round(pingSeconds * 1000f);
+        }
+        catch
+        {
+            Nothing();
+        }
+    }
+
+    private static void FillPrivilegesOrKeepPrevious(PlayerSnapshot snapshot, IPlayer player)
+    {
+        try
+        {
+            // On server this is generally available. If it comes empty/null, we keep previous.
+            var privileges = player.Privileges;
+            if (privileges == null || privileges.Length == 0) return;
+
+            // Normalize + remove duplicates
+            snapshot.Stats.Privileges = privileges
+                .Where(p => !string.IsNullOrWhiteSpace(p))
+                .Select(p => p.Trim())
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .OrderBy(p => p, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+        }
+        catch
+        {
+            Nothing();
+        }
+    }
+
+    private static void FillEquipmentOrKeepPrevious(PlayerSnapshot snapshot, IServerPlayer player)
     {
         var equipment = snapshot.Equipment;
 
+        // Armor
         var inv = player.InventoryManager.GetOwnInventory("character");
         if (inv != null)
         {
@@ -95,25 +145,60 @@ public class VsPlayerSnapshotProvider(ICoreServerAPI sapi, PlayerRegistry regist
             equipment.Armor = armor;
         }
 
+        // Hotbar (fixed 10)
         var hotbar = player.InventoryManager.GetHotbarInventory();
-        var activeIndex = player.InventoryManager.ActiveHotbarSlotNumber;
-
-        if (hotbar != null &&
-            activeIndex >= 0 &&
-            activeIndex < hotbar.Count &&
-            !hotbar[activeIndex].Empty)
+        if (hotbar != null)
         {
-            var held = hotbar[activeIndex].Itemstack?.Collectible?.Code?.ToShortString() ?? "unknown";
-            equipment.HeldItem = held;
+            var list = new List<string>(10);
+
+            var count = Math.Min(10, hotbar.Count);
+            for (var i = 0; i < count; i++)
+            {
+                var slot = hotbar[i];
+                list.Add(slot.Empty
+                    ? "none"
+                    : (slot.Itemstack?.Collectible?.Code?.ToShortString() ?? "unknown"));
+            }
+
+            while (list.Count < 10) list.Add("none");
+
+            equipment.Hotbar = list;
+
+            // HeldItem: active slot
+            var activeIndex = player.InventoryManager.ActiveHotbarSlotNumber;
+            if (activeIndex >= 0 &&
+                activeIndex < hotbar.Count &&
+                !hotbar[activeIndex].Empty)
+            {
+                equipment.HeldItem =
+                    hotbar[activeIndex].Itemstack?.Collectible?.Code?.ToShortString() ?? "unknown";
+            }
+            // If active slot invalid/empty, keep the previous HeldItem
         }
 
         snapshot.Equipment = equipment;
     }
 
+    private void FillLocationOrKeepPrevious(PlayerSnapshot snapshot, Entity entity)
+    {
+        var pos = entity.Pos?.AsBlockPos;
+        if (pos == null) return;
+
+        var halfX = sapi.WorldManager.MapSizeX / 2;
+        var halfZ = sapi.WorldManager.MapSizeZ / 2;
+
+        snapshot.Location = new PlayerLocation
+        {
+            X = pos.X - halfX,
+            Y = pos.Y,
+            Z = pos.Z - halfZ
+        };
+    }
+
     private void FillWorldOrKeepPrevious(PlayerSnapshot snapshot, Entity entity)
     {
         var pos = entity.Pos?.AsBlockPos;
-        if (pos == null) return; // keep existing
+        if (pos == null) return;
 
         ClimateCondition? climate = null;
 
@@ -123,16 +208,22 @@ public class VsPlayerSnapshotProvider(ICoreServerAPI sapi, PlayerRegistry regist
         }
         catch
         {
-            // keep existing
+            Nothing();
         }
 
-        if (climate == null) return; // keep existing
+        if (climate == null) return;
 
         snapshot.World = new PlayerWorldInfo
         {
             AmbientTemperature = climate.Temperature,
             ClimateTag = GetClimateTag(climate)
         };
+    }
+
+    private static double FiniteOrZero(float value)
+    {
+        if (float.IsNaN(value) || float.IsInfinity(value)) return 0d;
+        return value;
     }
 
     private static string GetClimateTag(ClimateCondition climate)
@@ -147,5 +238,10 @@ public class VsPlayerSnapshotProvider(ICoreServerAPI sapi, PlayerRegistry regist
             <= 0f => "winter",
             _ => rain <= 0.2f ? "arid" : "unknown"
         };
+    }
+
+    private static void Nothing()
+    {
+        // Nothing to do here
     }
 }

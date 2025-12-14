@@ -31,8 +31,6 @@ public class LedgerModSystem : ModSystem
             storages.Add(_jsonStorage);
         }
 
-        // TODO: After: if (config.EnableSqlite) storages.Add(new SqlitePlayerStorage(...));
-
         _service = new LedgerService(api, registry, snapshotProvider, storages, _jsonStorage);
 
         api.Event.PlayerJoin += _service.OnPlayerJoin;
