@@ -126,42 +126,53 @@ public class VsPlayerSnapshotProvider(ICoreServerAPI sapi, PlayerRegistry regist
 
     private static void FillEquipmentOrKeepPrevious(PlayerSnapshot snapshot, IServerPlayer player, bool includeHotbar)
     {
+        var invManager = player.InventoryManager;
+        if (invManager == null) return;
+
         var equipment = snapshot.Equipment;
 
-        var inv = player.InventoryManager.GetOwnInventory("character");
-        if (inv != null)
+        try
         {
-            var armor = new List<string>(3);
-
-            foreach (var idx in ArmorSlots)
+            var inv = invManager.GetOwnInventory("character");
+            if (inv is { Count: > 0 })
             {
-                if (idx < 0 || idx >= inv.Count || inv[idx].Empty)
-                {
-                    armor.Add("none");
-                    continue;
-                }
+                var armor = (from slot in inv
+                    where slot?.Empty == false
+                    let code = slot.Itemstack?.Collectible?.Code?.ToShortString()
+                    where !string.IsNullOrWhiteSpace(code)
+                    where LooksWearable(code, slot.Itemstack?.Collectible)
+                    select code).ToList();
 
-                armor.Add(inv[idx].Itemstack?.Collectible?.Code?.ToShortString() ?? "unknown");
+                if (armor.Count > 0)
+                    equipment.Armor = armor;
             }
-
-            equipment.Armor = armor;
+        }
+        catch
+        {
+            // ignored
         }
 
-        var hotbar = player.InventoryManager.GetHotbarInventory();
-        if (hotbar != null)
+        try
         {
-            var activeIndex = player.InventoryManager.ActiveHotbarSlotNumber;
-
-            if (activeIndex >= 0 && activeIndex < hotbar.Count && !hotbar[activeIndex].Empty)
+            var hotbar = invManager.GetHotbarInventory();
+            if (hotbar is { Count: > 0 })
             {
-                equipment.HeldItem =
-                    hotbar[activeIndex].Itemstack?.Collectible?.Code?.ToShortString() ?? "unknown";
-            }
+                var activeIndex = invManager.ActiveHotbarSlotNumber;
 
-            if (includeHotbar)
-            {
-                equipment.Hotbar = ReadHotbarFixed10(hotbar);
+                if (activeIndex >= 0 && activeIndex < hotbar.Count && hotbar[activeIndex]?.Empty == false)
+                {
+                    var held = hotbar[activeIndex].Itemstack?.Collectible?.Code?.ToShortString();
+                    if (!string.IsNullOrWhiteSpace(held))
+                        equipment.HeldItem = held;
+                }
+
+                if (includeHotbar)
+                    equipment.Hotbar = ReadHotbarFixed10(hotbar);
             }
+        }
+        catch
+        {
+            // ignored
         }
 
         snapshot.Equipment = equipment;
@@ -170,14 +181,16 @@ public class VsPlayerSnapshotProvider(ICoreServerAPI sapi, PlayerRegistry regist
     private static List<string> ReadHotbarFixed10(IInventory hotbar)
     {
         var list = new List<string>(10);
-
         var count = Math.Min(10, hotbar.Count);
+
         for (var i = 0; i < count; i++)
         {
             var slot = hotbar[i];
-            list.Add(slot.Empty
+            var code = slot?.Empty != false
                 ? "none"
-                : (slot.Itemstack?.Collectible?.Code?.ToShortString() ?? "unknown"));
+                : slot.Itemstack?.Collectible?.Code?.ToShortString() ?? "unknown";
+
+            list.Add(code);
         }
 
         while (list.Count < 10) list.Add("none");
@@ -240,5 +253,14 @@ public class VsPlayerSnapshotProvider(ICoreServerAPI sapi, PlayerRegistry regist
             <= 0f => "winter",
             _ => rain <= 0.2f ? "arid" : "unknown"
         };
+    }
+
+    private static bool LooksWearable(string code, CollectibleObject? collectible)
+    {
+        if (code.Contains("armor", StringComparison.OrdinalIgnoreCase)) return true;
+        if (code.Contains("clothes", StringComparison.OrdinalIgnoreCase)) return true;
+
+        var tn = collectible?.GetType().Name;
+        return !string.IsNullOrWhiteSpace(tn) && tn.Contains("Wearable", StringComparison.OrdinalIgnoreCase);
     }
 }
